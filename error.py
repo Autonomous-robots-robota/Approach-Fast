@@ -6,10 +6,13 @@ class Errors():
         self.mu = config.mu
         self.sigma = config.sigma
         self.bias = config.bias
+        self.max_shift = 5
 
     def get_value_with_error(self, val):
         value = np.random.normal(self.mu+self.bias, self.sigma)
-        return val + value*val
+        return val + value * self.max_shift
+
+
 
 #
 # def main():
