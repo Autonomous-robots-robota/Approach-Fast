@@ -1,12 +1,8 @@
 import numpy as np
 import cv2
+import logs
 
-# Initialize variables for tracking
-tracking = False
-init_point = None
-old_points = None
-lk_params = dict(winSize=(15, 15), maxLevel=2,
-                 criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+global tracking, old_points, init_point, lk_params
 
 # Mouse callback function
 def select_point(event, x, y, flags, param):
@@ -16,42 +12,6 @@ def select_point(event, x, y, flags, param):
         old_points = np.array([[x, y]], dtype=np.float32).reshape(-1, 1, 2)
         tracking = True
 
-# Mouse callback for other purposes
-mouse_position = [0, 0]
-def mouse_callback(event, x, y, flags, param):
-    global mouse_position
-    if event == 1:
-        mouse_position[0] = x
-        mouse_position[1] = y
-
-# Video capture
-cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_BRIGHTNESS, -64)
-
-# Windows
-window_name = "OpenCV"
-cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
-cv2.setMouseCallback(window_name, mouse_callback)  # Mouse callback
-cv2.namedWindow("Frame")
-cv2.setMouseCallback("Frame", select_point)
-cv2.namedWindow("red_mask", cv2.WINDOW_AUTOSIZE)
-
-# Trackbar callback functions
-def on_saturation_trackbar(val):
-    global red_saturation
-    red_saturation = val
-
-def on_value_trackbar(val):
-    global red_value
-    red_value = val
-
-def on_hue_up_trackbar(val):
-    global red_hue_up
-    red_hue_up = val
-
-def on_hue_low_trackbar(val):
-    global red_hue_low
-    red_hue_low = val
 
 def get_center_of_mask(mask: np.ndarray):
     kernel = np.ones((10, 10), np.uint8)
@@ -65,19 +25,27 @@ def get_center_of_mask(mask: np.ndarray):
     return None
 
 def main():
-    global red_saturation, red_value, red_hue_up, red_hue_low, tracking, old_points
-    red_saturation = 0
-    red_value = 0
-    red_hue_up = 0
-    red_hue_low = 179
+    global tracking, old_points, init_point, lk_params
 
-    cv2.createTrackbar("Red Saturation", "red_mask", 0, 255, on_saturation_trackbar)
-    cv2.createTrackbar("Red Value", "red_mask", 0, 255, on_value_trackbar)
-    cv2.createTrackbar("Red Hue up", "red_mask", 0, 179, on_hue_up_trackbar)
-    cv2.createTrackbar("Red Hue low", "red_mask", 179, 179, on_hue_low_trackbar)
+
+    # Initialize variables for tracking
+    tracking = False
+    init_point = None
+    old_points = None
+    lk_params = dict(winSize=(15, 15), maxLevel=2,
+                     criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+    cap = cv2.VideoCapture(1)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, -64)
+
+    # Window
+    combined_window_name = "track point and detect green light"
+    cv2.namedWindow(combined_window_name, cv2.WINDOW_AUTOSIZE)
+    cv2.setMouseCallback(combined_window_name, select_point)
 
     ret, old_frame = cap.read()
     old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    comments = []
+    timestamp = 0.0
 
     while True:
         cap.set(cv2.CAP_PROP_BRIGHTNESS, -64)
@@ -88,7 +56,6 @@ def main():
             continue
 
         image = frame.copy()
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         red = image[:, :, 2]
 
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -96,14 +63,17 @@ def main():
         upper_green = np.array([75, 255, 255])
         green_mask = cv2.inRange(hsv, lower_green, upper_green)
         green_loc = get_center_of_mask(green_mask)
-
         if green_loc is not None:
-            cv2.circle(image, green_loc, 5, (0, 255, 0), 2)
+            command = "drone_point", "x:", green_loc[0], "y:", green_loc[1]
+            timestamp += 0.02  # Increment timestamp (adjust as necessary)
+            comments.append(f"Time: {timestamp:.2f} seconds - Command: {command}")
+            print("drone_point", green_loc)
 
-        cv2.imshow('green_mask', green_mask)
+        # if green_loc is not None:
+        #     cv2.circle(image, green_loc, 5, (0, 255, 0), 2)
 
-        (minVal, maxVal, minLoc, maxLoc_red) = cv2.minMaxLoc(red)
-        cv2.circle(image, maxLoc_red, 5, (0, 0, 255), 2)
+        #(minVal, maxVal, minLoc, maxLoc_red) = cv2.minMaxLoc(red)
+        #cv2.circle(image, maxLoc_red, 5, (0, 0, 255), 2)
 
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -112,21 +82,27 @@ def main():
             for i, (new, old) in enumerate(zip(new_points, old_points)):
                 a, b = new.ravel()
                 c, d = old.ravel()
-                frame = cv2.circle(frame, (int(a), int(b)), 5, (0, 255, 0), -1)
+                #image = cv2.circle(image, (int(a), int(b)), 5, (225, 0, 0), -1)
+
+                # target_point = (int(a), int(b))
+                # comment = logs.create_commands("target_point", int(a),  int(b))
+                # logs.save_commands_to_log(comment)
+                #
+                # print("target_point", target_point)
+
             old_gray = frame_gray.copy()
             old_points = new_points.reshape(-1, 1, 2)
 
-        cv2.imshow('Frame', frame)
-        cv2.imshow(window_name, image)
 
-        mouse_x, mouse_y = mouse_position
-        print(F"mouse_hsv: {hsv[mouse_y, mouse_x]}, red: {maxLoc_red}, green: {green_loc}")
+
+        cv2.imshow(combined_window_name, image)
 
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+    logs.save_commands_to_log(comments)
 
 if __name__ == '__main__':
     main()
