@@ -120,3 +120,8 @@ class Scenario:
         # this function gets the correct x from the fixed parbulah,
         # with the correct x it gets the y
         return m * curr_x + n
+
+
+
+
+
